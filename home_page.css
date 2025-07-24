@@ -1,0 +1,182 @@
+/* General page styling */
+html, body {
+    height: 100%; /* Full page height */
+    width: 100%; /* Full page width */
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+    background-color: white; /* Set entire background to white */
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    align-items: center; /* Center content horizontally */
+}
+
+
+/* Header styling for logo and text */
+.header {
+    display: flex;
+    align-items: center; /* Align logo and text vertically */
+    margin-top: 50px; /* Add some space above */
+}
+
+.logo-icon {
+    width: 50px; /* Adjust size of the logo */
+    height: auto;
+    margin-right: 10px; /* Space between logo and text */
+}
+
+.aigarage-logo {
+    position: absolute;
+    top: 50px; /* Keep as is */
+    left: 50%; /* Center horizontally */
+    transform: translateX(-50%); /* Offset by half the logo's width */
+    max-width: 300px; /* Maintain max size */
+    max-height: 300px;
+    width: auto; /* Maintain aspect ratio */
+    height: auto;
+}
+
+.trafford-logo {
+    font-size: 16px;
+    color: #555;
+    margin-top: 20px;
+    width: auto;      /* Maintain aspect ratio */
+    height: auto;     /* Maintain aspect ratio */
+}
+
+.title-lab {
+    position: relative;
+}
+
+.brand-name {
+    font-size: 24px; /* Adjust the font size of "AIGarage" */
+    font-weight: bold;
+    color: #333;
+}
+
+/* Lab text styling */
+.lab-text {
+    font-size: 16px; /* Same font size as status */
+    color: #555;
+    position: absolute;
+    top:50px;
+    right:30px;
+    /* border: 1px solid #ccc; */
+    /* left: 95%; Start below the letter 'e' */
+
+    margin-top: 2px; /* Small spacing between title and lab */
+}
+
+/* Main container styling */
+.container {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* Align items to the top */
+    align-items: center;
+    background-color: white;  /* Set background to white */
+    width: 100%;
+    max-width: 800px;
+    margin: auto;
+    /* padding: 20px; */
+    border-radius: 8px;
+    position: absolute;
+    bottom: 10%; /* Move the container 20% above the bottom */
+    left: 50%;
+    transform: translateX(-50%); /* Center the container horizontally */
+    height: auto; /* Auto height for the content */
+    box-shadow: none;  /* Remove box-shadow for no contrast */
+}
+
+/* Path box styling */
+.path-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin: 20px 0;
+}
+
+.path-box-input {
+    flex-grow: 1;
+    margin: 0 10px;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+/* Icons for upload and process */
+.upload-icon, .process-icon {
+    cursor: pointer;
+}
+.process-icon {
+    width: 30px; /* Adjust size for process icon */
+    height: 30px; /* Maintain aspect ratio */
+}
+
+
+.icon {
+    width: 40px; /* Adjust as needed */
+    height: auto;
+}
+
+/* Status text */
+.status {
+    font-size: 16px;
+    color: #555;
+    margin-top: 40px;        /* Add space for Trafford logo */
+    text-align: center;      /* Center the text */
+}
+
+
+/* Download button */
+.download-btn {
+    display: none;
+    padding: 10px 20px;
+    border: none;
+    background-color: #1e90ff;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+footer {
+    position: absolute;
+    bottom: 30px; /* Spacing from the bottom of the page */
+    width: 100%; /* Full width footer */
+    display: flex;
+    justify-content: space-between; /* Align text to left and right */
+    padding: 0 40px; /* Add horizontal padding for spacing */
+    font-size: 12px;
+    color: #555;
+    box-sizing: border-box; /* Ensure padding is included in the total width */
+}
+
+
+.footer-left {
+    text-align: left;
+    /* padding: 10px; */
+    font-size: 16px;
+    right: 10%;
+
+
+}
+/* Loader style */
+.loader {
+    font-size: 18px;
+    color: #555;
+    margin-top: 20px;
+    display: block;
+    text-align: center;
+    font-weight: bold;
+}
+
+
+.footer-right {
+    text-align: right;
+    /* padding: 10px; */
+    font-size: 16px;
+
+}
