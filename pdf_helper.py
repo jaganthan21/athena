@@ -3,21 +3,15 @@ import re
 import pandas as pd
 from datetime import datetime
 from striprtf.striprtf import rtf_to_text
-from global_variables import timestamp, excel_file_name, titles, column_names, keywords
-
+from global_variables import titles, column_names, keywords
+import fitz
 
 def modify_gender_string(value):
     """
     Standardize gender values to a consistent format.
-
-    Args:
-        value (str): Gender value to process.
-
-    Returns:
-        str: Standardized gender string ('Male', 'Female', or capitalized input).
     """
     try:
-        value = value.strip()  # Remove leading/trailing spaces
+        value = value.strip()
         if value.lower() in ('f', 'female'):
             return 'Female'
         if value.lower() in ('m', 'male'):
@@ -26,16 +20,9 @@ def modify_gender_string(value):
     except AttributeError:
         return ''
 
-
 def read_rtf_file(file_path):
     """
     Read an RTF file and convert it to plain text.
-
-    Args:
-        file_path (str): Path to the RTF file.
-
-    Returns:
-        str: Plain text content of the RTF file, or empty string if reading fails.
     """
     try:
         with open(file_path, 'rb') as file:
@@ -45,19 +32,15 @@ def read_rtf_file(file_path):
         print(f"Error reading {os.path.basename(file_path)}: {e}")
         return ''
 
-
-def extract_data_from_text(plain_text):
+def extract_data_from_text(plain_text, file_type):
     """
     Extract data from plain text based on keywords and special fields.
-
-    Args:
-        plain_text (str): Plain text content from an RTF file.
-
-    Returns:
-        dict: Dictionary of extracted data with keywords as keys, values stripped of spaces.
     """
     try:
-        array_of_words = plain_text.split("|")
+        if file_type == 'pdf':
+            array_of_words = plain_text.split('\n')
+        else:
+            array_of_words = plain_text.split("|")
         extracted_data = {}
 
         for i, word in enumerate(array_of_words):
@@ -65,10 +48,9 @@ def extract_data_from_text(plain_text):
             if not word:
                 continue
 
-            # Keyword-based extraction
             for keyword in keywords:
                 if re.search(rf'\b{re.escape(keyword)}\b', word, re.IGNORECASE):
-                    if keyword in ('Referral Agent details', 'Referrer Agent details'):
+                    if keyword in ('Referral Agent details', 'Referrer Agent details', 'Referral Details'):
                         extracted_data[keyword] = ' '.join(array_of_words[i + 1:]).strip()
                         break
                     next_value = ''
@@ -80,12 +62,14 @@ def extract_data_from_text(plain_text):
                         extracted_data[keyword] = next_value
                     break
 
-            # Special field handling with stripped values
             if 'Mobile' in word:
-                mobile_value = array_of_words[i].strip().split()
-                mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
-                mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
-                extracted_data['P_Mobile'] = mobile_value
+                if re.search(r'[0-9]', array_of_words[i].strip()):
+                    mobile_value = array_of_words[i].strip().split()
+                    mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
+                    mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
+                    extracted_data['P_Mobile'] = mobile_value.replace("(", "").replace(")", "")
+                else:
+                    extracted_data['P_Mobile'] = ''
 
             if 'Information relevant to referral' in word:
                 extracted_data['Related_Information'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
@@ -97,11 +81,14 @@ def extract_data_from_text(plain_text):
                 extracted_data['Reason_For_Referral'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
             if 'Landline' in word:
-                mobile_value = array_of_words[i].strip().split()
-                mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
-                mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
-                extracted_data['P_HomeTelephone'] = mobile_value
-
+                if re.search(r'[0-9]', array_of_words[i].strip()):
+                    mobile_value = array_of_words[i].strip().split()
+                    # checks if it has numbers the string, if not sets to empty
+                    mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
+                    mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
+                    extracted_data['P_HomeTelephone'] = mobile_value.replace("(", "").replace(")", "")
+                else:
+                    extracted_data['P_HomeTelephone'] = ''
             if word == 'Standing height':
                 extracted_data['R_StatType_Height_Value'] = ' '.join(array_of_words[i + 1:i + 2]).strip() if i + 1 < len(array_of_words) else ''
                 extracted_data['R_StatType_Height_Date'] = array_of_words[i - 1].strip() if i - 1 >= 0 else ''
@@ -116,30 +103,20 @@ def extract_data_from_text(plain_text):
             if word == 'O/E- blood pressure reading':
                 extracted_data['R_StatType_BloodPressure_Date'] = array_of_words[i - 1].strip() if i - 1 >= 0 else ''
                 extracted_data['R_StatType_BloodPressure_Value'] = ' '.join(array_of_words[i + 1:i + 3]).strip() if i + 1 < len(array_of_words) else ''
-
+            # print(f"Extracted data: {extracted_data}")  # Debugging output
         return extracted_data
     except Exception as e:
         print(f"Error extracting data: {e}")
         return {}
 
-
 def format_date(value, input_format='%d/%b/%Y', output_format='%d/%m/%Y'):
     """
     Format a date string to a consistent format.
-
-    Args:
-        value (str): Date string to format.
-        input_format (str): Expected input format.
-        output_format (str): Desired output format.
-
-    Returns:
-        str: Formatted date or 'NA' if parsing fails.
     """
     try:
-        value = value.strip()  # Remove leading/trailing spaces
+        value = value.strip()
         # print("Date value:", value)
         if not re.search(r'[0-9]', value):
-            print("Date value has no digits:", value)
             return 'NA'
         date_parts = value.split('-') if '-' in value else value.split('.')
         formatted_date = '/'.join(date_parts)
@@ -150,23 +127,14 @@ def format_date(value, input_format='%d/%b/%Y', output_format='%d/%m/%Y'):
     except ValueError:
         return 'NA'
 
-
 def clean_text(value):
     """
     Clean a text value by removing non-printable characters and leading/trailing spaces.
-
-    Args:
-        value (str): Text value to clean.
-
-    Returns:
-        str: Cleaned text value.
     """
     try:
-        # Remove non-printable characters and strip spaces
         return re.sub(r'[^\x20-\x7E]', '', value.strip())
     except (AttributeError, TypeError):
         return ''
-
 
 def transform_extracted_data(extracted_data):
     """
@@ -214,6 +182,15 @@ def transform_extracted_data(extracted_data):
                 elif len(name_array) == 2:
                     json_for_excel['P_FirstName'] = name_array[0]
                     json_for_excel['P_Surname'] = name_array[1]
+                # update P_Surname to captialized
+                # if 'P_Surname' in json_for_excel:
+                json_for_excel['P_Surname'] = json_for_excel['P_Surname'].capitalize().replace(',', '') 
+                # if first name contains , and is in uppercase, switch first name and surname values without splitting firsname
+                if 'P_FirstName' in json_for_excel and ',' in json_for_excel['P_FirstName'] and json_for_excel['P_FirstName'].isupper():
+                    json_for_excel['P_FirstName'], json_for_excel['P_Surname'] = json_for_excel['P_Surname'], json_for_excel['P_FirstName'].replace(',', '').capitalize()
+                elif 'P_Title' in json_for_excel and ',' in json_for_excel['P_Title'] and json_for_excel['P_Title'].isupper():
+                    json_for_excel['P_Title'], json_for_excel['P_Surname'] = json_for_excel['P_Surname'], json_for_excel['P_Title'].replace(',', '').capitalize()
+
             elif key == 'DOB':
                 json_for_excel['P_DateOfBirth'] = format_date(value)
             elif key == 'Ethnicity':
@@ -315,107 +292,141 @@ def transform_extracted_data(extracted_data):
         return {}
 
 
-def create_data_row(json_for_excel):
+def create_data_row(json_for_csv):
     """
-    Create a data row for the Excel output with default values for missing columns.
-
-    Args:
-        json_for_excel (dict): Transformed data for Excel.
-
-    Returns:
-        dict: Data row with column names as keys and appropriate values.
+    Create a data row for the CSV output with default values for missing columns.
     """
     return {
         col: (
-            '01234 567890' if col == 'P_HomeTelephone' and json_for_excel.get(col, '') == 'Landline:' else
-            '07939 064047' if col == 'P_Mobile' and json_for_excel.get(col, '') == 'Mobile:' else
-            'RFSNN' if col == 'RF_Surname' and json_for_excel.get(col, '') == '' else
-            '5527' if col == 'RF_SchemeID' and json_for_excel.get('RO_Name', '').startswith('Cardiac') else
-            '5411' if col == 'RF_SchemeID' and json_for_excel.get('RO_Name', '') != '' else
-            json_for_excel.get(col, '')
+            '01234 567890' if col == 'P_HomeTelephone' and json_for_csv.get(col, '') == 'Landline:' else
+            '07939 064047' if col == 'P_Mobile' and json_for_csv.get(col, '') == 'Mobile:' else
+            'RFSNN' if col == 'RF_Surname' and json_for_csv.get(col, '') == '' else
+            '5527' if col == 'RF_SchemeID' and json_for_csv.get('RO_Name', '').startswith('Cardiac') else
+            '5411' if col == 'RF_SchemeID' and json_for_csv.get('RO_Name', '') != '' else
+            json_for_csv.get(col, '')
         )
         for col in column_names
     }
 
-
-def save_to_excel(data_rows, folder_path):
+def save_to_csv(data_rows, folder_path, email):
     """
-    Save the processed data to an Excel file.
+    Save the processed data to a CSV file.
 
     Args:
         data_rows (list): List of data rows to save.
-        folder_path (str): Path to the folder where the Excel file will be saved.
+        folder_path (str): Path to the folder where the CSV file will be saved.
+        email (str): User's email to generate the filename.
 
     Returns:
-        str: Excel file name if successful, empty string if saving fails.
+        dict: Success status, message, and CSV file path.
     """
     try:
         df = pd.DataFrame(data_rows)
-        # Ensure all values are strings to avoid Excel formatting issues
         df = df.astype(str)
-        excel_file_path = os.path.join(folder_path, excel_file_name)
-        df.to_excel(excel_file_path, index=False, engine='openpyxl')
-        print(f"Data successfully saved to {excel_file_path}")
-        return excel_file_name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sanitized_email = email.replace('@', '_').replace('.', '_')
+        csv_filename = f"output_{sanitized_email}_{timestamp}.csv"
+        csv_file_path = os.path.join(folder_path, csv_filename)
+        # need to remove last 3 columns
+        df = df.iloc[:, :-3]
+        df.to_csv(csv_file_path, index=False)
+        print(f"Data successfully saved to {csv_file_path}")
+        return {
+            'success': True,
+            'message': f"CSV file saved to {csv_file_path}",
+            'fileName': csv_file_path
+        }
     except Exception as e:
-        print(f"Error saving Excel file: {e}")
-        return ''
+        print(f"Error saving CSV file: {e}")
+        return {
+            'success': False,
+            'message': f"Error saving CSV file: {str(e)}",
+            'fileName': ''
+        }
 
-
-def process_rtf_files_in_folder(folder_path):
+def process_files_in_folder(folder_path, email="check"):
     """
-    Process RTF files in the specified folder, extract data, and save to an Excel file.
+    Process RTF files in the specified folder, extract data, and save to a CSV file.
 
     Args:
         folder_path (str): Path to the folder containing RTF files.
+        email (str): User's email to generate the output folder and filename.
 
     Returns:
-        str: Path to the generated Excel file or empty string if processing fails.
-
-    Notes:
-        - Extracts data based on keywords and formats it into a structured DataFrame.
-        - Combines Reason_For_Referral, Relevant_Medical_Conditions, and Related_Information into P_Information.
-        - Retains the original three columns in the output.
-        - Ensures all values are clean and visible in Excel formula bar.
-        - Removes leading/trailing spaces and non-printable characters from Email values only.
+        dict: Success status, message, and path to the generated CSV file.
     """
     try:
         if not os.path.isdir(folder_path):
             print(f"Invalid folder path: {folder_path}")
-            return ''
+            return {
+                'success': False,
+                'message': 'Invalid folder path',
+                'fileName': ''
+            }
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sanitized_email = email.replace('@', '_').replace('.', '_')
+        output_folder = os.path.join(os.path.dirname(folder_path), f"{sanitized_email}_{timestamp}")
+        os.makedirs(output_folder, exist_ok=True)
 
         data_rows = []
         failed_files = []
 
         for filename in os.listdir(folder_path):
-            if not filename.lower().endswith('.rtf'):
-                continue
-
+            # # check for pdf files
+            # if not filename.lower().endswith('.rtf'):
+            #     continue
             file_path = os.path.join(folder_path, filename)
-            plain_text = read_rtf_file(file_path)
+            plain_text = ""
+            file_type = filename.lower().split('.')[-1]
+            # if condition for pdf
+            if filename.lower().endswith('.pdf'):
+                doc = fitz.open(file_path)
+                # Iterate through all pages
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    text = page.get_text()
+                    plain_text += text + "\n"  # Append text from each page with a newline separator
+                # print("Extracted text from PDF:", plain_text)  # Print first 100 characters for debuggin
+                # Close the document
+                doc.close()
+            else:
+                plain_text = read_rtf_file(file_path)
+
             if not plain_text:
                 failed_files.append(filename)
                 continue
 
-            extracted_data = extract_data_from_text(plain_text)
+            extracted_data = extract_data_from_text(plain_text,file_type)
             if not extracted_data:
                 failed_files.append(filename)
                 continue
 
-            json_for_excel = transform_extracted_data(extracted_data)
-            if not json_for_excel:
+            json_for_csv = transform_extracted_data(extracted_data)
+            if not json_for_csv:
                 failed_files.append(filename)
                 continue
 
-            data_row = create_data_row(json_for_excel)
+            data_row = create_data_row(json_for_csv)
             data_rows.append(data_row)
 
         if not data_rows:
             print(f"No valid RTF files processed in {folder_path}")
-            return ''
+            return {
+                'success': False,
+                'message': 'No valid RTF files found',
+                'fileName': ''
+            }
 
-        return save_to_excel(data_rows, folder_path)
+        result = save_to_csv(data_rows, output_folder, email)
+        if result['success'] and failed_files:
+            result['message'] += f"\nFailed to process: {', '.join(failed_files)}"
+        return result
 
     except Exception as e:
         print(f"Unexpected error in process_rtf_files_in_folder: {e}")
-        return ''
+        return {
+            'success': False,
+            'message': f"Unexpected error: {str(e)}",
+            'fileName': ''
+        }

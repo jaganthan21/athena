@@ -4,7 +4,8 @@ import win32com.client
 import psutil
 import time
 import traceback
-from helper_functions import process_rtf_files_in_folder
+# from helper_functions import process_rtf_files_in_folder
+from pdf_helper import process_files_in_folder as process_rtf_files_in_folder
 
 
 def kill_word_processes():
@@ -170,7 +171,7 @@ class AppAPI:
 
             # Process RTF files to generate Excel
             try:
-                self.generated_file_name = process_rtf_files_in_folder(folder_path)
+                self.generated_file_name = process_rtf_files_in_folder(folder_path,"check")
             except Exception as e:
                 print(f"Error processing RTF files: {e}")
                 return {
