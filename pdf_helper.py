@@ -109,23 +109,37 @@ def extract_data_from_text(plain_text, file_type):
         print(f"Error extracting data: {e}")
         return {}
 
-def format_date(value, input_format='%d/%b/%Y', output_format='%d/%m/%Y'):
+
+def format_date(value, output_format='%d/%m/%Y'):
     """
     Format a date string to a consistent format.
+    Supports both abbreviated (Aug) and full (August) month names.
     """
     try:
         value = value.strip()
-        # print("Date value:", value)
         if not re.search(r'[0-9]', value):
             return 'NA'
-        date_parts = value.split('-') if '-' in value else value.split('.')
+
+
+        # Normalize separators to "/"
+        # date_parts = value.split('-') if '-' in value else value.split('.')
+        date_parts = re.split(r'[-.\s]+', value)
+
         formatted_date = '/'.join(date_parts)
+
         if re.search(r'[a-z]', formatted_date, re.IGNORECASE):
-            date_obj = datetime.strptime(formatted_date, input_format)
-            return date_obj.strftime(output_format)
+            # Try both abbreviated (%b) and full month name (%B)
+            for fmt in ("%d/%b/%Y", "%d/%B/%Y"):
+                try:
+                    date_obj = datetime.strptime(formatted_date, fmt)
+                    return date_obj.strftime(output_format)
+                except ValueError:
+                    continue
+            return 'NA'  # If neither format works
         return formatted_date
     except ValueError:
         return 'NA'
+
 
 def clean_text(value):
     """
@@ -158,7 +172,12 @@ def transform_extracted_data(extracted_data):
 
             if key == 'Name':
                 value = re.sub(r'[()]', '', value)
+                if "Sofyane" in value:
+                    print("Debug: Found 'Sofyane' in Name value")
+                    print("Original Name value:", value)
                 name_array = [part.strip() for part in value.split()]
+                # replace "." with "" in name_array elements
+                name_array = [part.replace('.', '') for part in name_array]
                 if len(name_array) == 4:
                     json_for_excel['P_Title'] = name_array[0].replace('.', '')
                     json_for_excel['P_FirstName'] = name_array[1]
@@ -170,7 +189,7 @@ def transform_extracted_data(extracted_data):
                         if title_index == 2:
                             json_for_excel['P_Title'] = name_array[2].replace('.', '')
                             json_for_excel['P_FirstName'] = name_array[1]
-                            json_for_excel['P_Surname'] = name_array[2]
+                            json_for_excel['P_Surname'] = name_array[0]
                         else:
                             json_for_excel['P_Title'] = name_array[0].replace('.', '')
                             json_for_excel['P_FirstName'] = name_array[1]
@@ -199,8 +218,15 @@ def transform_extracted_data(extracted_data):
                 json_for_excel['P_Gender'] = modify_gender_string(value)
             elif key == 'Address':
                 address = value.splitlines() if value.splitlines() else value.split(',')
+                if address and address[0].strip().lower() == "home address":
+                    address.pop(0)
+                print("Debug: Address lines:", address)
+                if len(address)==1 and ',' in address[0]:
+                    address = [part.strip() for part in address[0].split(',')]
+
                 for i, add in enumerate(address, 1):
                     json_for_excel[f'P_HomeAddress{i}'] = add.strip()
+            # json_for_excel['P_HomeAddress3'] = json_for_excel['P_HomeAddress3'].capitalize() 
             elif key == 'Postcode':
                 json_for_excel['P_HomePostcode'] = value.upper()
             elif key == 'P_HomeTelephone':
@@ -238,12 +264,14 @@ def transform_extracted_data(extracted_data):
                 ref_date = ''
                 valid_date = False
 
-                # search date parts index in referrer details
                 for i, detail in enumerate(ref_details):
-                    if re.search(r'Date of referral', detail):
-                        ref_date = detail.split()[-1]
+                    match = re.search(r'Date of referral[:\s]+(.+)', detail, re.IGNORECASE)
+                    if match:
+                        # print(detail)
+                        ref_date = match.group(1).strip()   # everything after "Date of referral"
                         valid_date = bool(re.search(r'[0-9]', ref_date))
                         break
+
                 # date_parts = ref_details[-1].split()
                 # if date_parts:
                 #     ref_date = date_parts[-1]
@@ -274,7 +302,8 @@ def transform_extracted_data(extracted_data):
 
                 if not valid_date:
                     # print("Invalid or missing referral date:", ref_date)
-                    print("Referral details:", ref_details)
+                    # print("Referral details:", ref_details)
+                    pass
                 # Format referral date
                 json_for_excel['R_DateOfReferral'] = format_date(ref_date) if valid_date else 'NA'
 
@@ -285,7 +314,9 @@ def transform_extracted_data(extracted_data):
 
         # Combine Reason_For_Referral, Relevant_Medical_Conditions, and Related_Information into P_Information
         json_for_excel['P_Information'] = ', '.join(part for part in p_information_parts if part)
-
+        #check if homeaddress3 contains numbers, then remove the home address 3 value
+        if 'P_HomeAddress3' in json_for_excel and re.search(r'[0-9]', json_for_excel['P_HomeAddress3']):
+            json_for_excel['P_HomeAddress3']=''
         return json_for_excel
     except Exception as e:
         print(f"Error transforming data: {e}")

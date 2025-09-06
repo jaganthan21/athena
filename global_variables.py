@@ -2,7 +2,7 @@ from datetime import datetime
 # Get the current timestamp in "mm_dd_yyyy_hh_mm" format
 timestamp = datetime.now().strftime("%m_%d_%Y_%H_%M")
 excel_file_name=f"processed_data_{timestamp}.xlsx"
-titles = ["Ms", "Mrs","Mrs.","Ms.","Miss", "Mr","(Mrs)","(Mrs.)","(Ms)","(Miss)","MRS"]
+titles = ["Ms", "Mrs","Mrs.","Ms.","Miss", "Mr","(Mrs)","(Mrs.)","(Ms)","(Miss)","MRS","Dr","Dr.","DR","Prof","Prof.","PROF","Sir","Madam","Master"]
 # Column names for the Excel file
 column_names = [
     "P_Title", "P_FirstName", "P_MiddleNames", "P_Surname", "P_DateOfBirth", "P_Gender",
