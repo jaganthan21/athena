@@ -78,6 +78,7 @@ def extract_data_from_text(plain_text, file_type):
                 extracted_data['Relevant_Medical_Conditions'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
             if 'To be completed by the referrer' in word:
+                print("Reason details found:", array_of_words[i + 1:i + 4])  # Debugging output
                 extracted_data['Reason_For_Referral'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
             if 'Landline' in word:
