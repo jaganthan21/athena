@@ -172,11 +172,15 @@ def transform_extracted_data(extracted_data):
 
             if key == 'Name':
                 value = re.sub(r'[()]', '', value)
+                # value.replace('"', '')
                 if "Sofyane" in value:
                     print("Debug: Found 'Sofyane' in Name value")
                     print("Original Name value:", value)
                 name_array = [part.strip() for part in value.split()]
-                # replace "." with "" in name_array elements
+                # replace "." and quotes with "" in name_array elements
+                # name_array = [part.replace('"', '') for part in name_array]
+                # name_array = [part.capitalize() for part in name_array]
+
                 name_array = [part.replace('.', '') for part in name_array]
                 if len(name_array) == 4:
                     json_for_excel['P_Title'] = name_array[0].replace('.', '')
@@ -203,13 +207,14 @@ def transform_extracted_data(extracted_data):
                     json_for_excel['P_Surname'] = name_array[1]
                 # update P_Surname to captialized
                 # if 'P_Surname' in json_for_excel:
-                json_for_excel['P_Surname'] = json_for_excel['P_Surname'].capitalize().replace(',', '') 
+                # json_for_excel['P_Surname'] = json_for_excel['P_Surname'].capitalize().replace(',', '') 
+
                 # if first name contains , and is in uppercase, switch first name and surname values without splitting firsname
                 if 'P_FirstName' in json_for_excel and ',' in json_for_excel['P_FirstName'] and json_for_excel['P_FirstName'].isupper():
                     json_for_excel['P_FirstName'], json_for_excel['P_Surname'] = json_for_excel['P_Surname'], json_for_excel['P_FirstName'].replace(',', '').capitalize()
                 elif 'P_Title' in json_for_excel and ',' in json_for_excel['P_Title'] and json_for_excel['P_Title'].isupper():
                     json_for_excel['P_Title'], json_for_excel['P_Surname'] = json_for_excel['P_Surname'], json_for_excel['P_Title'].replace(',', '').capitalize()
-
+                
             elif key == 'DOB':
                 json_for_excel['P_DateOfBirth'] = format_date(value)
             elif key == 'Ethnicity':
@@ -306,6 +311,9 @@ def transform_extracted_data(extracted_data):
                     pass
                 # Format referral date
                 json_for_excel['R_DateOfReferral'] = format_date(ref_date) if valid_date else 'NA'
+ 
+            # append the text "Invalid date" to the P_DateofBirth value  if date of birth is current year
+            # json_for_excel['P_DateOfBirth'] = json_for_excel.get('P_DateOfBirth', '')
 
             # Collect fields for P_Information
             if key in ('Reason_For_Referral', 'Relevant_Medical_Conditions', 'Related_Information'):
@@ -313,10 +321,34 @@ def transform_extracted_data(extracted_data):
                 p_information_parts.append(value)
 
         # Combine Reason_For_Referral, Relevant_Medical_Conditions, and Related_Information into P_Information
-        json_for_excel['P_Information'] = ', '.join(part for part in p_information_parts if part)
+        json_for_excel['P_Information'] = ', '.join(part.replace('Select from drop down ', '') for part in p_information_parts if part)
+        if json_for_excel['P_Surname'] == 'Wilding':
+                json_for_excel['P_DateOfBirth']='29-09-2025'
         #check if homeaddress3 contains numbers, then remove the home address 3 value
         if 'P_HomeAddress3' in json_for_excel and re.search(r'[0-9]', json_for_excel['P_HomeAddress3']):
             json_for_excel['P_HomeAddress3']=''
+        if 'P_DateOfBirth' in json_for_excel and re.search(r'\b\d{4}\b', json_for_excel['P_DateOfBirth']):
+            birth_year = int(re.search(r'\b\d{4}\b', json_for_excel['P_DateOfBirth']).group())
+            current_year = datetime.now().year
+            if birth_year == current_year:
+                json_for_excel['P_DateOfBirth'] += ' Invalid date'
+        if 'P_Surname' in json_for_excel:
+            json_for_excel['P_Surname'] = json_for_excel['P_Surname'].capitalize().replace(',', '').replace('"', '')
+
+        if 'P_FirstName' in json_for_excel and json_for_excel['P_FirstName']:
+            json_for_excel['P_FirstName'] = json_for_excel['P_FirstName'].capitalize().replace(',', '').replace('"', '')
+        if 'P_MiddleNames' in json_for_excel and json_for_excel['P_MiddleNames']:
+            json_for_excel['P_MiddleNames'] = json_for_excel['P_MiddleNames'].capitalize().replace(',', '').replace('"', '')
+        # json_for_excel['R_Reason'] = json_for_excel['P_Surname'].capitalize().replace(',', '').replace('"', '')
+        json_for_excel['R_ReasonForReferral'] = json_for_excel['P_Information']
+        if json_for_excel.get('RF_Role', '') == '':
+            json_for_excel['RF_Role']='Other Health Professional'
+        if json_for_excel.get('RO_Name', '') == '':
+            json_for_excel['RO_Name']='NA'
+        if json_for_excel.get('RF_FirstName', '') == '':
+            json_for_excel['RF_FirstName']='NA'
+        # json_for_excel['P_MiddleNames'] = json_for_excel['P_MiddleNames'].capitalize().replace(',', '').replace('"', '')
+        # json_for_excel['P_FirstName'] = json_for_excel['P_FirstName'].capitalize().replace(',', '').replace('"', '')
         return json_for_excel
     except Exception as e:
         print(f"Error transforming data: {e}")
@@ -329,8 +361,8 @@ def create_data_row(json_for_csv):
     """
     return {
         col: (
-            '01234 567890' if col == 'P_HomeTelephone' and json_for_csv.get(col, '') == 'Landline:' else
-            '07939 064047' if col == 'P_Mobile' and json_for_csv.get(col, '') == 'Mobile:' else
+            '01234 567890' if col == 'P_HomeTelephone' and json_for_csv.get(col, '') in ('Landline:','') else
+            '07939 064047' if col == 'P_Mobile' and json_for_csv.get(col, '') in ('Mobile:','') else
             'RFSNN' if col == 'RF_Surname' and json_for_csv.get(col, '') == '' else
             '5527' if col == 'RF_SchemeID' and json_for_csv.get('RO_Name', '').startswith('Cardiac') else
             '5411' if col == 'RF_SchemeID' and json_for_csv.get('RO_Name', '') != '' else
