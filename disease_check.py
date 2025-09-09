@@ -1,23 +1,26 @@
-import re
-from striprtf.striprtf import rtf_to_text
+import pypandoc
+import fitz  # PyMuPDF
+from PIL import Image
+import pytesseract
 
-file_path = r"C:\Users\Mekkanos\Downloads\check_disease\check.rtf"
+# --- Step 1: Convert RTF to PDF ---
+input_rtf = r"C:\Users\Mekkanos\Downloads\check_disease\check.rtf"
+output_pdf =r"C:\Users\Mekkanos\Downloads\check_disease\check.pdf"
 
-def extract_selected_dropdowns(rtf_content):
-    results = []
-    # Find fldrslt blocks following FORMDROPDOWN
-    pattern = r'FORMDROPDOWN.*?{\\fldrslt([^}]*)}'
-    for match in re.finditer(pattern, rtf_content, re.DOTALL):
-        raw_value = match.group(1)
-        # Clean the RTF formatting
-        value = rtf_to_text(raw_value).strip()
-        if value:
-            results.append(value)
-    return results
+pypandoc.convert_file(input_rtf, 'pdf', outputfile=output_pdf)
 
-# Example usage
-with open(file_path, "r", encoding="utf-8") as f:
-    rtf_content = f.read()
+# --- Step 2: Open PDF and render first page as image ---
+doc = fitz.open(output_pdf)
+page = doc[0]  # first page
+pix = page.get_pixmap(dpi=200)
+img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-selected = extract_selected_dropdowns(rtf_content)
-print("Selected dropdowns:", selected)
+# --- Step 3: Convert to grayscale ---
+gray_img = img.convert("L")
+gray_img.save("first_page_gray.png")
+
+# --- Step 4: OCR ---
+text = pytesseract.image_to_string(gray_img)
+
+print("Extracted OCR Text:\n")
+print(text)

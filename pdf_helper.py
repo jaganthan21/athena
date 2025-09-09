@@ -78,7 +78,7 @@ def extract_data_from_text(plain_text, file_type):
                 extracted_data['Relevant_Medical_Conditions'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
             if 'To be completed by the referrer' in word:
-                print("Reason details found:", array_of_words[i + 1:i + 4])  # Debugging output
+                # print("Reason details found:", array_of_words[i + 1:i + 4])  # Debugging output
                 extracted_data['Reason_For_Referral'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
             if 'Landline' in word:
@@ -175,8 +175,9 @@ def transform_extracted_data(extracted_data):
                 value = re.sub(r'[()]', '', value)
                 # value.replace('"', '')
                 if "Sofyane" in value:
-                    print("Debug: Found 'Sofyane' in Name value")
-                    print("Original Name value:", value)
+                    # print("Debug: Found 'Sofyane' in Name value")
+                    # print("Original Name value:", value)
+                    pass
                 name_array = [part.strip() for part in value.split()]
                 # replace "." and quotes with "" in name_array elements
                 # name_array = [part.replace('"', '') for part in name_array]
@@ -226,7 +227,7 @@ def transform_extracted_data(extracted_data):
                 address = value.splitlines() if value.splitlines() else value.split(',')
                 if address and address[0].strip().lower() == "home address":
                     address.pop(0)
-                print("Debug: Address lines:", address)
+                # print("Debug: Address lines:", address)
                 if len(address)==1 and ',' in address[0]:
                     address = [part.strip() for part in address[0].split(',')]
 
@@ -254,47 +255,45 @@ def transform_extracted_data(extracted_data):
             elif key == 'R_StatType_BloodPressure_Value':
                 json_for_excel['R_StatType_BloodPressure_Value'] = value
             elif key in ('Referral Agent details', 'Referrer Agent details'):
-                # Split by lines, keep raw values
-                ref_details = [line.strip() for line in value.splitlines() if line.strip()]
-                if not ref_details:
-                    continue
+                # Normalize text into tokens
+                tokens = value.split()
+                # Helper: fetch value(s) after a keyword until next keyword
+                def get_field(tokens, keyword, stop_words):
+                    try:
+                        idx = next(i for i, t in enumerate(tokens) if t.lower() == keyword.lower())
+                        collected = []
+                        for t in tokens[idx + 1:]:
+                            if t.lower() in [s.lower() for s in stop_words]:
+                                break
+                            collected.append(t)
+                        return " ".join(collected).strip()
+                    except StopIteration:
+                        return ""
 
-                # Extract organization name (assuming second line, after splitting by spaces)
-                org_name = ref_details[1].split()[1:] if len(ref_details) > 1 else []
-                json_for_excel['RO_Name'] = ' '.join(org_name).strip()
-
-                # Extract referrer name (first line)
-                ref_name = [part.strip() for part in re.sub(r'[()]', '', ref_details[0]).split() if part.strip()]
+                # Extract fields
+                name_val = get_field(tokens, "Name", ["Organisation", "Contact", "Date"])
+                org_val = get_field(tokens, "Organisation", ["Name", "Contact", "Date"])
+                contact_val = get_field(tokens, "Contact", ["Name", "Organisation", "Date"])
                 
-                # Extract date (last line, last word)
-                ref_date = ''
-                valid_date = False
+                # Special case: Date of referral -> just take next index
+                try:
+                    date_idx = next(i for i, t in enumerate(tokens) if t.lower() == "date")
+                    if date_idx + 3 < len(tokens) and tokens[date_idx:date_idx+3] == ["Date","of","referral"]:
+                        ref_date = tokens[date_idx + 3] if date_idx + 3 < len(tokens) else ""
+                    else:
+                        ref_date = ""
+                except StopIteration:
+                    ref_date = ""
 
-                for i, detail in enumerate(ref_details):
-                    match = re.search(r'Date of referral[:\s]+(.+)', detail, re.IGNORECASE)
-                    if match:
-                        # print(detail)
-                        ref_date = match.group(1).strip()   # everything after "Date of referral"
-                        valid_date = bool(re.search(r'[0-9]', ref_date))
-                        break
-
-                # date_parts = ref_details[-1].split()
-                # if date_parts:
-                #     ref_date = date_parts[-1]
-                #     # print("Referrer date:", ref_date)
-                #     valid_date = bool(re.search(r'[0-9]', ref_date))
-
-                # Parse referrer name
-                if len(ref_name) >= 2:
-                    # date_parts = ref_details[-1].split()
-                    # if date_parts:
-                    #     ref_date = date_parts[-1]
-                    #     # print("Referrer date:", ref_date)
-                    #     valid_date = bool(re.search(r'[0-9]', ref_date))
+                # Assign results
+                if name_val:
+                    ref_name = [part.strip() for part in re.sub(r'[()]', '', name_val).split() if part.strip()]
+                    print("Referal name parts:", ref_name)  # Debugging output
                     if len(ref_name) == 2:
-                        json_for_excel['RF_FirstName'] = ref_name[1]
+                        json_for_excel['RF_FirstName'] = ref_name[0]
+                        json_for_excel['RF_Surname'] = ref_name[1]
                     elif len(ref_name) == 3:
-                        if ref_name[1] == 'Dr':
+                        if ref_name[1].lower() == 'dr':
                             json_for_excel['RF_FirstName'] = ref_name[2]
                             json_for_excel['RF_Role'] = 'Doctor'
                         else:
@@ -304,27 +303,31 @@ def transform_extracted_data(extracted_data):
                     elif len(ref_name) == 4:
                         json_for_excel['RF_FirstName'] = ref_name[2]
                         json_for_excel['RF_Surname'] = ref_name[3]
-                        json_for_excel['RF_Role'] = 'Doctor' if ref_name[1] == 'Dr' else 'Other Health Professional'
+                        json_for_excel['RF_Role'] = 'Doctor' if ref_name[1].lower() == 'dr' else 'Other Health Professional'
 
-                if not valid_date:
-                    # print("Invalid or missing referral date:", ref_date)
-                    # print("Referral details:", ref_details)
-                    pass
-                # Format referral date
-                json_for_excel['R_DateOfReferral'] = format_date(ref_date) if valid_date else 'NA'
- 
-            # append the text "Invalid date" to the P_DateofBirth value  if date of birth is current year
-            # json_for_excel['P_DateOfBirth'] = json_for_excel.get('P_DateOfBirth', '')
+                if org_val:
+                    json_for_excel['RO_Name'] = org_val
+                if contact_val:
+                    json_for_excel['RF_Contact'] = contact_val
+
+                json_for_excel['R_DateOfReferral'] = format_date(ref_date) if ref_date else "NA"
+                print("Referal Organistaion name:", json_for_excel.get('RO_Name', 'Not found'))
+                print("Referal Contact name:", json_for_excel.get('RF_Contact', 'Not found'))
+                print("Referal First name:", json_for_excel.get('RF_FirstName', 'Not found'))
+                print("Referal Surname name:", json_for_excel.get('RF_Surname', 'Not found'))
+                print("Referal Role:", json_for_excel.get('RF_Role', 'Not found'))
+                print("Referal Date of referral:", json_for_excel.get('R_DateOfReferral', 'Not found'))
+           
 
             # Collect fields for P_Information
-            if key in ('Reason_For_Referral', 'Relevant_Medical_Conditions', 'Related_Information'):
-                json_for_excel[key] = value
-                p_information_parts.append(value)
+        if key in ('Reason_For_Referral', 'Relevant_Medical_Conditions', 'Related_Information'):
+            json_for_excel[key] = value
+            p_information_parts.append(value)
 
         # Combine Reason_For_Referral, Relevant_Medical_Conditions, and Related_Information into P_Information
         json_for_excel['P_Information'] = ', '.join(part.replace('Select from drop down ', '') for part in p_information_parts if part)
-        if json_for_excel['P_Surname'] == 'Wilding':
-                json_for_excel['P_DateOfBirth']='29-09-2025'
+        # if json_for_excel['P_Surname'] == 'Wilding':
+        #     json_for_excel['P_DateOfBirth']='29-09-2025'
         #check if homeaddress3 contains numbers, then remove the home address 3 value
         if 'P_HomeAddress3' in json_for_excel and re.search(r'[0-9]', json_for_excel['P_HomeAddress3']):
             json_for_excel['P_HomeAddress3']=''
