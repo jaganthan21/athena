@@ -20,4 +20,4 @@ column_names = [
 keywords = ["Name", "Address", "Postcode", "Landline:", "Mobile:", "Email", "DOB", "Age", "Gender", "Ethnicity",
             "Interpreter", "required language", "Disability", "disability details", "Height", "Weight",
             "BMI", "Blood Pressure", "Information relevant to referral", "Relevant medical conditions",
-            "Problems", "Active", "Referral Agent details", "Referrer Agent details","O/E- blood pressure reading"]
+            "Active", "Referral Agent details", "Referrer Agent details","O/E- blood pressure reading"]

@@ -42,6 +42,7 @@ def extract_data_from_text(plain_text, file_type):
         else:
             array_of_words = plain_text.split("|")
         extracted_data = {}
+        # print("Array of words:", array_of_words)  # Debugging output
 
         for i, word in enumerate(array_of_words):
             word = word.strip()
@@ -50,7 +51,10 @@ def extract_data_from_text(plain_text, file_type):
 
             for keyword in keywords:
                 if re.search(rf'\b{re.escape(keyword)}\b', word, re.IGNORECASE):
-                    if keyword in ('Referral Agent details', 'Referrer Agent details', 'Referral Details'):
+                    # if keyword contains "Referral" word 
+                    if keyword in ('Referral Agent details', 'Referrer Agent details', 'Referral Details') or 'Referral Agent' in word:
+                        print("Found keyword:", keyword)  # Debugging output
+                        print("Context words:", array_of_words[max(0, i-2):min(len(array_of_words), i+5)])  # Debugging output
                         extracted_data[keyword] = ' '.join(array_of_words[i + 1:]).strip()
                         break
                     next_value = ''
@@ -141,6 +145,100 @@ def format_date(value, output_format='%d/%m/%Y'):
     except ValueError:
         return 'NA'
 
+def parse_referral_name(name_val):
+    """
+    Parse referral name into FirstName, Surname, and Role.
+    - Uses only the first line if multiple lines are present.
+    - Removes bracketed info (Band numbers, job titles) from name tokens.
+    - Handles titles, dash-separated roles, and inline role keywords.
+    - Cleans role text (removes dots, commas, extra words).
+    - Normalizes roles: only 'Doctor' stays; everything else -> 'Other Health Professional'.
+    """
+
+    print("Parsing referral name:", name_val)
+    result = {"RF_FirstName": "", "RF_Surname": "", "RF_Role": ""}
+
+    if not name_val:
+        return result
+
+    # Step 0: Only keep the first line if multiple lines exist
+    first_line = name_val.splitlines()[0].strip()
+
+    # Known role keywords
+    role_keywords = [
+        "physiotherapist", "consultant", "nurse", "gp", "surgeon",
+        "therapist", "specialist", "doctor", "pharmacist", "dentist",
+        "midwife", "practitioner", "prescriber", "behavioural"
+    ]
+
+    # Step 1: Split by '-' (role comes after dash if present)
+    parts = [p.strip() for p in first_line.split('-') if p.strip()]
+    name_part = parts[0]
+    role_part = parts[1] if len(parts) > 1 else None
+
+    # Step 2: Remove parenthesis content from name_part
+    name_clean = re.sub(r'\([^)]*\)', '', name_part).strip()
+
+    # Step 3: Tokenize
+    ref_name = [part.strip().strip(",.") for part in name_clean.split() if part.strip()]
+
+    # Common titles → roles
+    title_roles = {
+        "dr": "Doctor",
+        "prof": "Doctor",
+        "mr": "Other Health Professional",
+        "mrs": "Other Health Professional",
+        "ms": "Other Health Professional",
+        "miss": "Other Health Professional",
+        "nurse": "Other Health Professional"
+    }
+
+    role = None
+    first_name = ""
+    surname = ""
+
+    if ref_name:
+        # Step 4: Handle titles
+        if ref_name[0].lower() in title_roles:
+            role = title_roles[ref_name[0].lower()]
+            ref_name = ref_name[1:]  # remove title
+
+        # Step 5: If no dash role, look for inline role keywords
+        if not role_part:
+            lower_tokens = [t.lower().strip(",.") for t in ref_name]
+            for i, token in enumerate(lower_tokens):
+                if any(r in token for r in role_keywords):
+                    role = " ".join(ref_name[i:])  # role = tokens from here onwards
+                    ref_name = ref_name[:i]        # name = tokens before role
+                    break
+
+        # Step 6: Assign first and last name from remaining tokens
+        if ref_name:
+            first_name = ref_name[0]
+            # last "clean" token should be surname
+            if len(ref_name) > 1:
+                surname_candidates = [t for t in ref_name[1:] if re.match(r"^[A-Za-z'-]+$", t)]
+                if surname_candidates:
+                    surname = surname_candidates[-1]
+
+    # Step 7: If dash role exists, override
+    if role_part:
+        role = role_part
+
+    # Step 8: Normalize role
+    if role:
+        role = role.strip(" ,.-")
+        if role.lower().startswith("doctor") or role.lower().startswith("dr"):
+            role = "Doctor"
+        else:
+            role = "Other Health Professional"
+
+    # Step 9: Return result
+    result["RF_FirstName"] = first_name
+    result["RF_Surname"] = surname
+    result["RF_Role"] = role if role else ""
+
+    return result
 
 def clean_text(value):
     """
@@ -163,6 +261,7 @@ def transform_extracted_data(extracted_data):
     """
     try:
         json_for_excel = {}
+        # print("Extracted referal data:", extracted_data["Referral Agent details"])  # Debugging output
         # Collect values for P_Information
         p_information_parts = []
 
@@ -258,23 +357,38 @@ def transform_extracted_data(extracted_data):
                 # Normalize text into tokens
                 tokens = value.split()
                 # Helper: fetch value(s) after a keyword until next keyword
+
+                def normalize_token(t):
+                    """Lowercase and remove trailing punctuation like ':', ',', '.', ';', '-'."""
+                    return re.sub(r'[\s:;,.-]+$', '', t.strip().lower())
+
                 def get_field(tokens, keyword, stop_words):
                     try:
-                        idx = next(i for i, t in enumerate(tokens) if t.lower() == keyword.lower())
+                        # normalize keyword and stop_words for comparison
+                        norm_keyword = normalize_token(keyword)
+                        norm_stopwords = [normalize_token(s) for s in stop_words]
+
+                        # find index of keyword in tokens
+                        idx = next(i for i, t in enumerate(tokens) if normalize_token(t) == norm_keyword)
+
                         collected = []
                         for t in tokens[idx + 1:]:
-                            if t.lower() in [s.lower() for s in stop_words]:
+                            if normalize_token(t) in norm_stopwords:
                                 break
                             collected.append(t)
+
                         return " ".join(collected).strip()
                     except StopIteration:
                         return ""
+                print("Referral Agent details tokens:", tokens)  # Debugging output
 
                 # Extract fields
                 name_val = get_field(tokens, "Name", ["Organisation", "Contact", "Date"])
                 org_val = get_field(tokens, "Organisation", ["Name", "Contact", "Date"])
                 contact_val = get_field(tokens, "Contact", ["Name", "Organisation", "Date"])
                 
+                if len(org_val.split("\n")) > 1:    
+                    print("Extracted Organisation:", org_val)  # Debugging output
                 # Special case: Date of referral -> just take next index
                 try:
                     date_idx = next(i for i, t in enumerate(tokens) if t.lower() == "date")
@@ -287,23 +401,8 @@ def transform_extracted_data(extracted_data):
 
                 # Assign results
                 if name_val:
-                    ref_name = [part.strip() for part in re.sub(r'[()]', '', name_val).split() if part.strip()]
-                    print("Referal name parts:", ref_name)  # Debugging output
-                    if len(ref_name) == 2:
-                        json_for_excel['RF_FirstName'] = ref_name[0]
-                        json_for_excel['RF_Surname'] = ref_name[1]
-                    elif len(ref_name) == 3:
-                        if ref_name[1].lower() == 'dr':
-                            json_for_excel['RF_FirstName'] = ref_name[2]
-                            json_for_excel['RF_Role'] = 'Doctor'
-                        else:
-                            json_for_excel['RF_FirstName'] = ref_name[1]
-                            json_for_excel['RF_Surname'] = ref_name[2]
-                            json_for_excel['RF_Role'] = 'Other Health Professional'
-                    elif len(ref_name) == 4:
-                        json_for_excel['RF_FirstName'] = ref_name[2]
-                        json_for_excel['RF_Surname'] = ref_name[3]
-                        json_for_excel['RF_Role'] = 'Doctor' if ref_name[1].lower() == 'dr' else 'Other Health Professional'
+                    results = parse_referral_name(name_val)
+                    json_for_excel.update(results)
 
                 if org_val:
                     json_for_excel['RO_Name'] = org_val
