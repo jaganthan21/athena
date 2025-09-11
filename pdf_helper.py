@@ -145,17 +145,11 @@ def format_date(value, output_format='%d/%m/%Y'):
     except ValueError:
         return 'NA'
 
-def parse_referral_name(name_val):
-    """
-    Parse referral name into FirstName, Surname, and Role.
-    - Uses only the first line if multiple lines are present.
-    - Removes bracketed info (Band numbers, job titles) from name tokens.
-    - Handles titles, dash-separated roles, and inline role keywords.
-    - Cleans role text (removes dots, commas, extra words).
-    - Normalizes roles: only 'Doctor' stays; everything else -> 'Other Health Professional'.
-    """
+import re
 
-    print("Parsing referral name:", name_val)
+import re
+
+def parse_referral_name(name_val):
     result = {"RF_FirstName": "", "RF_Surname": "", "RF_Role": ""}
 
     if not name_val:
@@ -171,15 +165,41 @@ def parse_referral_name(name_val):
         "midwife", "practitioner", "prescriber", "behavioural"
     ]
 
-    # Step 1: Split by '-' (role comes after dash if present)
+    # Noise markers to stop processing
+    noise_markers = {
+        "http", "www", "tel", "mob", "fax", "email", "nhs", "hospital",
+        "centre", "clinic", "street", "road", "avenue", "building", "floor"
+    }
+
+    # Step 1: Pre-clean - cut at role keyword or noise marker
+    tokens = first_line.split()
+    lower_tokens = [re.sub(r"\W", "", t).lower() for t in tokens]
+
+    cut_index = len(tokens)  # Default to full length if no markers
+    for i, tok in enumerate(lower_tokens):
+        if tok in role_keywords or any(tok.startswith(marker) for marker in noise_markers):
+            cut_index = i
+            break
+
+    # Keep only tokens before cut_index for name, include role if keyword found
+    name_tokens = tokens[:cut_index] if cut_index > 0 else tokens[:2]  # Limit to 2 name tokens if no cut
+    role_tokens = tokens[cut_index:] if cut_index < len(tokens) and lower_tokens[cut_index] in role_keywords else []
+    first_line = " ".join(name_tokens + role_tokens)
+
+    # Known post-nominal letters (credentials) to ignore as surname
+    post_nominals = {
+        "fcp", "mbbs", "md", "phd", "msc", "bsc", "frcs", "facs", "do", "mrcgp"
+    }
+
+    # Step 2: Split by '-' (role comes after dash if present)
     parts = [p.strip() for p in first_line.split('-') if p.strip()]
     name_part = parts[0]
     role_part = parts[1] if len(parts) > 1 else None
 
-    # Step 2: Remove parenthesis content from name_part
+    # Step 3: Remove parenthesis content from name_part
     name_clean = re.sub(r'\([^)]*\)', '', name_part).strip()
 
-    # Step 3: Tokenize
+    # Step 4: Tokenize
     ref_name = [part.strip().strip(",.") for part in name_clean.split() if part.strip()]
 
     # Common titles → roles
@@ -198,34 +218,35 @@ def parse_referral_name(name_val):
     surname = ""
 
     if ref_name:
-        # Step 4: Handle titles
+        # Step 5: Handle titles
         if ref_name[0].lower() in title_roles:
             role = title_roles[ref_name[0].lower()]
             ref_name = ref_name[1:]  # remove title
 
-        # Step 5: If no dash role, look for inline role keywords
+        # Step 6: If no dash role, look for inline role keywords
         if not role_part:
             lower_tokens = [t.lower().strip(",.") for t in ref_name]
             for i, token in enumerate(lower_tokens):
-                if any(r in token for r in role_keywords):
-                    role = " ".join(ref_name[i:])  # role = tokens from here onwards
-                    ref_name = ref_name[:i]        # name = tokens before role
+                if token in role_keywords:  # exact match with keyword
+                    role = " ".join(ref_name[i:])   # everything from keyword onwards = role
+                    ref_name = ref_name[:i]         # everything before keyword = name
                     break
 
-        # Step 6: Assign first and last name from remaining tokens
+        # Step 7: Assign firstname & surname
         if ref_name:
-            first_name = ref_name[0]
-            # last "clean" token should be surname
-            if len(ref_name) > 1:
-                surname_candidates = [t for t in ref_name[1:] if re.match(r"^[A-Za-z'-]+$", t)]
-                if surname_candidates:
-                    surname = surname_candidates[-1]
+            # filter out post-nominals
+            valid_tokens = [t for t in ref_name if t.lower() not in post_nominals]
+            if len(valid_tokens) > 1:
+                surname = valid_tokens[-1]
+                first_name = " ".join(valid_tokens[:-1])  # everything before surname
+            elif len(valid_tokens) == 1:
+                first_name = valid_tokens[0]
 
-    # Step 7: If dash role exists, override
+    # Step 8: If dash role exists, override
     if role_part:
         role = role_part
 
-    # Step 8: Normalize role
+    # Step 9: Normalize role
     if role:
         role = role.strip(" ,.-")
         if role.lower().startswith("doctor") or role.lower().startswith("dr"):
@@ -233,13 +254,12 @@ def parse_referral_name(name_val):
         else:
             role = "Other Health Professional"
 
-    # Step 9: Return result
+    # Step 10: Return result
     result["RF_FirstName"] = first_name
     result["RF_Surname"] = surname
     result["RF_Role"] = role if role else ""
 
     return result
-
 def clean_text(value):
     """
     Clean a text value by removing non-printable characters and leading/trailing spaces.
