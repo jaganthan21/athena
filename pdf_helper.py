@@ -53,8 +53,8 @@ def extract_data_from_text(plain_text, file_type):
                 if re.search(rf'\b{re.escape(keyword)}\b', word, re.IGNORECASE):
                     # if keyword contains "Referral" word 
                     if keyword in ('Referral Agent details', 'Referrer Agent details', 'Referral Details') or 'Referral Agent' in word:
-                        print("Found keyword:", keyword)  # Debugging output
-                        print("Context words:", array_of_words[max(0, i-2):min(len(array_of_words), i+5)])  # Debugging output
+                        # print("Found keyword:", keyword)  # Debugging output
+                        # print("Context words:", array_of_words[max(0, i-2):min(len(array_of_words), i+5)])  # Debugging output
                         extracted_data[keyword] = ' '.join(array_of_words[i + 1:]).strip()
                         break
                     next_value = ''
@@ -67,13 +67,26 @@ def extract_data_from_text(plain_text, file_type):
                     break
 
             if 'Mobile' in word:
-                if re.search(r'[0-9]', array_of_words[i].strip()):
-                    mobile_value = array_of_words[i].strip().split()
-                    mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
-                    mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
-                    extracted_data['P_Mobile'] = mobile_value.replace("(", "").replace(")", "")
-                else:
-                    extracted_data['P_Mobile'] = ''
+                # Only capture if not already set
+                if not extracted_data.get('P_Mobile'):
+                    # Look ahead if current slot is blank
+                    number_candidate = array_of_words[i].strip()
+                    if not re.search(r'[0-9]', number_candidate)  and i + 1 < len(array_of_words):
+                        number_candidate = array_of_words[i + 1].strip()
+
+                    print("Candidate mobile:", number_candidate)
+
+                    if re.search(r'[0-9]', number_candidate):
+                        mobile_value = number_candidate.split()
+                        if len(mobile_value) > 2:
+                            mobile_value = ''.join(mobile_value[1:])
+                        else:
+                            mobile_value = mobile_value[-1]
+                        mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
+                        extracted_data['P_Mobile'] = mobile_value.replace("(", "").replace(")", "")
+                    else:
+                        extracted_data['P_Mobile'] = ''
+
 
             if 'Information relevant to referral' in word:
                 extracted_data['Related_Information'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
@@ -85,15 +98,31 @@ def extract_data_from_text(plain_text, file_type):
                 # print("Reason details found:", array_of_words[i + 1:i + 4])  # Debugging output
                 extracted_data['Reason_For_Referral'] = array_of_words[i + 1].strip() if i + 1 < len(array_of_words) else ''
 
-            if 'Landline' in word:
-                if re.search(r'[0-9]', array_of_words[i].strip()):
-                    mobile_value = array_of_words[i].strip().split()
-                    # checks if it has numbers the string, if not sets to empty
-                    mobile_value = ''.join(mobile_value[1:]) if len(mobile_value) > 2 else mobile_value[-1]
-                    mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
-                    extracted_data['P_HomeTelephone'] = mobile_value.replace("(", "").replace(")", "")
-                else:
-                    extracted_data['P_HomeTelephone'] = ''
+            if 'Landline' in word or 'Telephone:' in word:
+                print("Debug: Landline/Telephone found:", word)
+
+                # Only capture if not already set
+                if not extracted_data.get('P_HomeTelephone'):
+                    # Look ahead if current slot is blank
+                    number_candidate = array_of_words[i].strip()
+                    if not re.search(r'[0-9]', number_candidate)  and i + 1 < len(array_of_words):
+                        number_candidate = array_of_words[i + 1].strip()
+
+                    print("Candidate number:", number_candidate)
+
+                    if re.search(r'[0-9]', number_candidate):
+                        mobile_value = number_candidate.split()
+                        # if it has extra words before the number
+                        if len(mobile_value) > 2:
+                            mobile_value = ''.join(mobile_value[1:])
+                        else:
+                            mobile_value = mobile_value[-1]
+                        mobile_value = f'{mobile_value[:5]} {mobile_value[5:]}'.strip()
+                        extracted_data['P_HomeTelephone'] = mobile_value.replace("(", "").replace(")", "")
+                    else:
+                        extracted_data['P_HomeTelephone'] = ''
+
+
             if word == 'Standing height':
                 extracted_data['R_StatType_Height_Value'] = ' '.join(array_of_words[i + 1:i + 2]).strip() if i + 1 < len(array_of_words) else ''
                 extracted_data['R_StatType_Height_Date'] = array_of_words[i - 1].strip() if i - 1 >= 0 else ''
@@ -145,10 +174,6 @@ def format_date(value, output_format='%d/%m/%Y'):
     except ValueError:
         return 'NA'
 
-import re
-
-import re
-
 def parse_referral_name(name_val):
     result = {"RF_FirstName": "", "RF_Surname": "", "RF_Role": ""}
 
@@ -159,50 +184,22 @@ def parse_referral_name(name_val):
     first_line = name_val.splitlines()[0].strip()
 
     # Known role keywords
-    role_keywords = [
+    role_keywords = {
         "physiotherapist", "consultant", "nurse", "gp", "surgeon",
         "therapist", "specialist", "doctor", "pharmacist", "dentist",
-        "midwife", "practitioner", "prescriber", "behavioural"
-    ]
+        "midwife", "practitioner", "prescriber", "cognitive","behavioural","psychologist"
+    }
 
-    # Noise markers to stop processing
+    # Noise markers
     noise_markers = {
         "http", "www", "tel", "mob", "fax", "email", "nhs", "hospital",
         "centre", "clinic", "street", "road", "avenue", "building", "floor"
     }
 
-    # Step 1: Pre-clean - cut at role keyword or noise marker
-    tokens = first_line.split()
-    lower_tokens = [re.sub(r"\W", "", t).lower() for t in tokens]
+    # Post nominals
+    post_nominals = {"fcp", "mbbs", "md", "phd", "msc", "bsc", "frcs", "facs", "do", "mrcgp"}
 
-    cut_index = len(tokens)  # Default to full length if no markers
-    for i, tok in enumerate(lower_tokens):
-        if tok in role_keywords or any(tok.startswith(marker) for marker in noise_markers):
-            cut_index = i
-            break
-
-    # Keep only tokens before cut_index for name, include role if keyword found
-    name_tokens = tokens[:cut_index] if cut_index > 0 else tokens[:2]  # Limit to 2 name tokens if no cut
-    role_tokens = tokens[cut_index:] if cut_index < len(tokens) and lower_tokens[cut_index] in role_keywords else []
-    first_line = " ".join(name_tokens + role_tokens)
-
-    # Known post-nominal letters (credentials) to ignore as surname
-    post_nominals = {
-        "fcp", "mbbs", "md", "phd", "msc", "bsc", "frcs", "facs", "do", "mrcgp"
-    }
-
-    # Step 2: Split by '-' (role comes after dash if present)
-    parts = [p.strip() for p in first_line.split('-') if p.strip()]
-    name_part = parts[0]
-    role_part = parts[1] if len(parts) > 1 else None
-
-    # Step 3: Remove parenthesis content from name_part
-    name_clean = re.sub(r'\([^)]*\)', '', name_part).strip()
-
-    # Step 4: Tokenize
-    ref_name = [part.strip().strip(",.") for part in name_clean.split() if part.strip()]
-
-    # Common titles → roles
+    # Title roles
     title_roles = {
         "dr": "Doctor",
         "prof": "Doctor",
@@ -213,40 +210,100 @@ def parse_referral_name(name_val):
         "nurse": "Other Health Professional"
     }
 
+    # Step 1: Tokenize original line
+    tokens = first_line.split()
+
+    # Step 2: Remove parenthesis blocks
+    removed_indices = set()
+    paren_spans_text = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if "(" in tok:
+            start = i
+            j = i
+            found_end = False
+            while j < len(tokens):
+                if ")" in tokens[j]:
+                    found_end = True
+                    break
+                j += 1
+            end = j if found_end else len(tokens) - 1
+            span = tokens[start:end + 1] if found_end else tokens[start:]
+            cleaned_span = " ".join(re.sub(r'^[\(\)\.,]+|[\(\)\.,]+$', '', s) for s in span).strip()
+            if cleaned_span:
+                paren_spans_text.append(cleaned_span)
+            for idx in range(start, end + 1):
+                removed_indices.add(idx)
+            i = end + 1
+        else:
+            i += 1
+
+    tokens_no_paren = [t for idx, t in enumerate(tokens) if idx not in removed_indices]
+    lower_tokens_no_paren = [re.sub(r"\W", "", t).lower() for t in tokens_no_paren]
+
+    # Step 3: cut at role/noise marker
+    cut_index = len(tokens_no_paren)
+    for i, tok in enumerate(lower_tokens_no_paren):
+        if tok in role_keywords or any(tok.startswith(marker) for marker in noise_markers):
+            cut_index = i
+            break
+
+    name_tokens = tokens_no_paren[:cut_index] if cut_index > 0 else tokens_no_paren[:2]
+    role_tokens = []
+    if cut_index < len(tokens_no_paren) and lower_tokens_no_paren[cut_index] in role_keywords:
+        role_tokens = tokens_no_paren[cut_index:]
+
+    name_part = " ".join(name_tokens)
+    role_part = " ".join(role_tokens) if role_tokens else None
+
+    if not role_part and paren_spans_text:
+        paren_join = " ".join(paren_spans_text).lower()
+        if any(k in paren_join for k in role_keywords) or "physio" in paren_join:
+            role_part = " ".join(paren_spans_text)
+
+    parts = [p.strip() for p in name_part.split('-') if p.strip()]
+    name_part = parts[0] if parts else ""
+    role_part = parts[1] if len(parts) > 1 else role_part
+
+    name_clean = re.sub(r'\([^)]*\)', '', name_part).strip()
+    raw_tokens = [part.strip().strip(",.") for part in name_clean.split() if part.strip()]
+
+    # Normalize dotted names like R.Norris or A.B.Smith
+    ref_name = []
+    for tok in raw_tokens:
+        if "." in tok and re.match(r"^[A-Za-z](?:\.[A-Za-z])+\.?[A-Za-z]*$", tok):
+            ref_name.extend([p for p in tok.split(".") if p])
+        else:
+            ref_name.append(tok)
+
     role = None
     first_name = ""
     surname = ""
 
     if ref_name:
-        # Step 5: Handle titles
         if ref_name[0].lower() in title_roles:
             role = title_roles[ref_name[0].lower()]
-            ref_name = ref_name[1:]  # remove title
+            ref_name = ref_name[1:]
 
-        # Step 6: If no dash role, look for inline role keywords
         if not role_part:
-            lower_tokens = [t.lower().strip(",.") for t in ref_name]
-            for i, token in enumerate(lower_tokens):
-                if token in role_keywords:  # exact match with keyword
-                    role = " ".join(ref_name[i:])   # everything from keyword onwards = role
-                    ref_name = ref_name[:i]         # everything before keyword = name
+            lower_ref_name = [t.lower().strip(",.") for t in ref_name]
+            for i, token in enumerate(lower_ref_name):
+                if token in role_keywords or token == "physio":
+                    role = " ".join(ref_name[i:])
+                    ref_name = ref_name[:i]
                     break
 
-        # Step 7: Assign firstname & surname
-        if ref_name:
-            # filter out post-nominals
-            valid_tokens = [t for t in ref_name if t.lower() not in post_nominals]
-            if len(valid_tokens) > 1:
-                surname = valid_tokens[-1]
-                first_name = " ".join(valid_tokens[:-1])  # everything before surname
-            elif len(valid_tokens) == 1:
-                first_name = valid_tokens[0]
+        valid_tokens = [t for t in ref_name if t.lower() not in post_nominals]
+        if len(valid_tokens) > 1:
+            surname = valid_tokens[-1]
+            first_name = " ".join(valid_tokens[:-1])
+        elif len(valid_tokens) == 1:
+            first_name = valid_tokens[0]
 
-    # Step 8: If dash role exists, override
     if role_part:
         role = role_part
 
-    # Step 9: Normalize role
     if role:
         role = role.strip(" ,.-")
         if role.lower().startswith("doctor") or role.lower().startswith("dr"):
@@ -254,12 +311,21 @@ def parse_referral_name(name_val):
         else:
             role = "Other Health Professional"
 
-    # Step 10: Return result
+    # --- NEW CHANGE #1: swap if first name is uppercase ---
+    if first_name.isupper() and len(first_name) > 1 and surname and not surname.isupper():
+        first_name, surname = surname, first_name
+
+    # --- NEW CHANGE #2: final capitalization ---
+    first_name = first_name.replace(",", "").title()
+    surname = surname.replace(",", "").title()
+
     result["RF_FirstName"] = first_name
     result["RF_Surname"] = surname
     result["RF_Role"] = role if role else ""
 
     return result
+
+
 def clean_text(value):
     """
     Clean a text value by removing non-printable characters and leading/trailing spaces.
@@ -344,6 +410,7 @@ def transform_extracted_data(extracted_data):
                 json_for_excel['P_Gender'] = modify_gender_string(value)
             elif key == 'Address':
                 address = value.splitlines() if value.splitlines() else value.split(',')
+                print("Debug: Raw address lines:", value)
                 if address and address[0].strip().lower() == "home address":
                     address.pop(0)
                 # print("Debug: Address lines:", address)
@@ -352,6 +419,10 @@ def transform_extracted_data(extracted_data):
 
                 for i, add in enumerate(address, 1):
                     json_for_excel[f'P_HomeAddress{i}'] = add.strip()
+                # if last index has numbers then assign it to postcode
+                if re.search(r'[0-9]', address[-1]):
+                    json_for_excel['P_HomePostcode'] = address[-1].strip().upper()
+                    print("Debug: Moved address line 4 to postcode:", json_for_excel['P_HomePostcode'])
             # json_for_excel['P_HomeAddress3'] = json_for_excel['P_HomeAddress3'].capitalize() 
             elif key == 'Postcode':
                 json_for_excel['P_HomePostcode'] = value.upper()
@@ -400,7 +471,7 @@ def transform_extracted_data(extracted_data):
                         return " ".join(collected).strip()
                     except StopIteration:
                         return ""
-                print("Referral Agent details tokens:", tokens)  # Debugging output
+                # print("Referral Agent details tokens:", tokens)  # Debugging output
 
                 # Extract fields
                 name_val = get_field(tokens, "Name", ["Organisation", "Contact", "Date"])
@@ -408,7 +479,8 @@ def transform_extracted_data(extracted_data):
                 contact_val = get_field(tokens, "Contact", ["Name", "Organisation", "Date"])
                 
                 if len(org_val.split("\n")) > 1:    
-                    print("Extracted Organisation:", org_val)  # Debugging output
+                    # print("Extracted Organisation:", org_val)  # Debugging output
+                    pass
                 # Special case: Date of referral -> just take next index
                 try:
                     date_idx = next(i for i, t in enumerate(tokens) if t.lower() == "date")
@@ -421,6 +493,7 @@ def transform_extracted_data(extracted_data):
 
                 # Assign results
                 if name_val:
+                    print("Extracted Referral Name:", name_val)  # Debugging output
                     results = parse_referral_name(name_val)
                     json_for_excel.update(results)
 
@@ -430,12 +503,12 @@ def transform_extracted_data(extracted_data):
                     json_for_excel['RF_Contact'] = contact_val
 
                 json_for_excel['R_DateOfReferral'] = format_date(ref_date) if ref_date else "NA"
-                print("Referal Organistaion name:", json_for_excel.get('RO_Name', 'Not found'))
-                print("Referal Contact name:", json_for_excel.get('RF_Contact', 'Not found'))
-                print("Referal First name:", json_for_excel.get('RF_FirstName', 'Not found'))
-                print("Referal Surname name:", json_for_excel.get('RF_Surname', 'Not found'))
-                print("Referal Role:", json_for_excel.get('RF_Role', 'Not found'))
-                print("Referal Date of referral:", json_for_excel.get('R_DateOfReferral', 'Not found'))
+                # print("Referal Organistaion name:", json_for_excel.get('RO_Name', 'Not found'))
+                # print("Referal Contact name:", json_for_excel.get('RF_Contact', 'Not found'))
+                # print("Referal First name:", json_for_excel.get('RF_FirstName', 'Not found'))
+                # print("Referal Surname name:", json_for_excel.get('RF_Surname', 'Not found'))
+                # print("Referal Role:", json_for_excel.get('RF_Role', 'Not found'))
+                # print("Referal Date of referral:", json_for_excel.get('R_DateOfReferral', 'Not found'))
            
 
             # Collect fields for P_Information

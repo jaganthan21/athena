@@ -68,6 +68,7 @@ def extract_data_from_text(plain_text):
             # Keyword-based extraction
             for keyword in keywords:
                 if re.search(rf'\b{re.escape(keyword)}\b', word, re.IGNORECASE):
+                    
                     if keyword in ('Referral Agent details', 'Referrer Agent details'):
                         extracted_data[keyword] = ' '.join(array_of_words[i + 1:]).strip()
                         break
@@ -79,7 +80,21 @@ def extract_data_from_text(plain_text):
                     if keyword not in extracted_data:
                         extracted_data[keyword] = next_value
                     break
-
+            
+            if 'address' in keyword.lower():
+                if keyword not in extracted_data:
+                    address_lines = []
+                    for j in range(i + 1, len(array_of_words)):
+                        candidate = array_of_words[j].strip()
+                        # stop if blank or another keyword appears
+                        if not candidate or any(
+                            re.search(rf'\b{re.escape(k)}\b', candidate, re.IGNORECASE) for k in keywords
+                        ):
+                            break
+                        address_lines.append(candidate)
+                    extracted_data[keyword] = ", ".join(address_lines)
+                    print(f"Extracted {keyword}: {extracted_data[keyword]}")
+                break
             # Special field handling with stripped values
             if 'Mobile' in word:
                 mobile_value = array_of_words[i].strip().split()

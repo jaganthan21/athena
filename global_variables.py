@@ -17,7 +17,7 @@ column_names = [
 ]
 
 # Keywords for data extraction
-keywords = ["Name", "Address", "Postcode", "Landline:", "Mobile:", "Email", "DOB", "Age", "Gender", "Ethnicity",
+keywords = ["Name", "Telephone:","Address", "Postcode", "Landline:", "Mobile:", "Email", "DOB", "Age", "Gender", "Ethnicity",
             "Interpreter", "required language", "Disability", "disability details", "Height", "Weight",
             "BMI", "Blood Pressure", "Information relevant to referral", "Relevant medical conditions",
             "Active", "Referral Agent details", "Referrer Agent details","O/E- blood pressure reading"]
