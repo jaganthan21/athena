@@ -21,3 +21,14 @@ keywords = ["Name", "Telephone:","Contact number","Address", "Postcode", "Landli
             "Interpreter", "required language", "Disability", "disability details", "Height", "Weight",
             "BMI", "Blood Pressure", "Information relevant to referral", "Relevant medical conditions",
             "Active", "Referral Agent details", "Referrer Agent details","O/E- blood pressure reading"]
+
+default_values = {
+    "P_HomeTelephone": "01234 567890",
+    "P_Mobile": "07939 064047",
+    "RF_Surname": "RFSNN",
+    "RF_SchemeID_Cardiac": "5527",
+    "RF_SchemeID_Other": "5411",
+    "RF_Role": "Other Health Professional",
+    "RO_Name": "NA",
+    "RF_FirstName": "NA"
+}
