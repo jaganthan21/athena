@@ -42,28 +42,49 @@ def get_next_value(array_of_words, start_index, keywords):
             return next_value
     return ''
 
+import re
+
 def extract_address(array_of_words, start_index, keywords):
     """
     Extract address lines until another keyword is found.
-    Handles cases where address is on the same line as the keyword.
+    Handles inline addresses and multi-line blocks containing '\n'.
     """
     address_lines = []
-    # Check if the keyword line contains address data after the keyword
-    keyword_line = array_of_words[start_index]
-    match = re.match(r'^(Address|Home address|Contact number)[:\s]*(.*)', keyword_line, re.IGNORECASE)
+
+    # ✅ Split keyword line into sub-lines (handles multi-line block issue)
+    keyword_block = array_of_words[start_index].splitlines()
+
+    # First sub-line may contain the keyword + inline address
+    first_line = keyword_block[0]
+    match = re.match(r'^(Address|Home address|Contact number)[:\s]*(.*)', first_line, re.IGNORECASE)
     if match and match.group(2).strip():
+        print(f"Address extraction found inline data: '{match.group(2).strip()}'")
         address_lines.append(match.group(2).strip())
-    # Now collect subsequent lines until another keyword
+
+    # Any remaining sub-lines after the keyword line are real address lines
+    for extra in keyword_block[1:]:
+        extra = extra.strip()
+        if extra:
+            address_lines.append(extra)
+            print(f"Added address line from keyword block: '{extra}'")
+
+    # ✅ Process subsequent lines as before
     for j in range(start_index + 1, len(array_of_words)):
-        line = array_of_words[j].strip()
-        print(f"Address extraction line: '{line}'")
-        if not line:
-            continue
-        if any(re.match(rf'^{re.escape(kw)}[:\-]?', line, re.IGNORECASE) for kw in keywords):
-            break
-        address_lines.append(line)
+        for line in array_of_words[j].splitlines():
+            line = line.strip()
+            print(f"Address extraction line: '{line}'")
+            if not line:
+                print("Skipping empty line")
+                continue
+            if any(line.lower().startswith(kw.lower()) for kw in keywords):
+                print(f"Stopping address extraction at keyword line: '{line}'")
+                return '\n'.join(address_lines).strip()
+            address_lines.append(line)
+            print(f"Added address line: '{line}'")
+
     print(f"Extracted address lines: {address_lines}")
     return '\n'.join(address_lines).strip()
+
 
 def extract_mobile_or_landline(array_of_words, i):
     """
@@ -381,22 +402,75 @@ def handle_name(value):
         result['P_Title'], result['P_Surname'] = result['P_Surname'], result['P_Title'].replace(',', '').capitalize()
     return result
 
+def normalize_case(text: str) -> str:
+    """Capitalize words unless the whole word is already uppercase (like acronyms)."""
+    return " ".join(
+        word.capitalize() if not word.isupper() else word
+        for word in text.split()
+    )
+
 def handle_address(value):
+    """
+    Robust address handler:
+    - Removes keyword prefixes
+    - Splits multi-line or comma-separated addresses
+    - Extracts postcode safely without picking up keywords
+    - Evenly splits remaining address into up to 3 columns
+    """
     result = {}
-    address = value.splitlines() if value.splitlines() else value.split(',')
-    if address and address[0].strip().lower() == "home address":
-        address.pop(0)
-    if len(address) == 1 and ',' in address[0]:
-        address = [part.strip() for part in address[0].split(',')]
+    if not value or not value.strip():
+        return result
+
+    # Step 1: Split into lines
+    lines = value.splitlines()
+    clean_lines = []
+
+    # Step 2: Remove any line that starts with keywords
+    forbidden_keywords = ["Contact number", "Telephone", "Landline", "Mobile"]
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if any(line.lower().startswith(k.lower()) for k in forbidden_keywords):
+            continue
+        # Remove "Address:" or "Home address:" prefix
+        line = re.sub(r'^(Address|Home address)[:\s]*', '', line, flags=re.IGNORECASE).strip()
+        if line:
+            clean_lines.append(line)
+
+    # Step 3: Join lines and normalize commas
+    address_text = ' '.join(clean_lines)
+    address_text = re.sub(r'[,\n]+', ' ', address_text).strip()
+
+    # Step 4: Extract postcode (first match) and remove from text
     postcode_pattern = r'\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b'
-    phone_pattern = r'(\b07\d{9}\b|\b01\d{9}\b|tel|mob|phone)'
-    address_lines = [line for line in address if not re.search(postcode_pattern, line.upper()) and not re.search(phone_pattern, line.lower())]
-    for i, add in enumerate(address_lines, 1):
-        result[f'P_HomeAddress{i}'] = add.strip()
-    # Find postcode in lines that do NOT contain phone numbers
-    postcode = next((line.strip().upper() for line in address if re.search(postcode_pattern, line.upper()) and not re.search(phone_pattern, line.lower())), '')
-    if postcode:
+    postcode_match = re.search(postcode_pattern, address_text.upper())
+    if postcode_match:
+        postcode = postcode_match.group(0).strip()
         result['P_HomePostcode'] = postcode
+        # Remove postcode from address text
+        address_text = address_text[:postcode_match.start()].strip()
+
+    # Step 5: Split remaining address into words
+    words = address_text.split()
+    if not words:
+        return result
+
+    # Step 6: Evenly split words into up to 3 columns
+    num_cols = min(3, len(words))
+    avg_len = len(words) // num_cols
+    remainder = len(words) % num_cols
+    start = 0
+
+    for i in range(1, num_cols + 1):
+        end = start + avg_len + (1 if remainder > 0 else 0)
+        column_text = ' '.join(words[start:end])
+        if column_text:
+            result[f'P_HomeAddress{i}'] = normalize_case(column_text)
+        start = end
+        if remainder > 0:
+            remainder -= 1
+
     return result
 
 def handle_referral_agent(value):
@@ -463,8 +537,15 @@ def transform_extracted_data(extracted_data):
             elif key == 'Address':
                 print(f"Processing address: {value}")
                 json_for_excel.update(handle_address(value))
+            # elif key == 'Postcode':
+            #     print(f"Processing postcode: {value}")
+            #     json_for_excel['P_HomePostcode'] = value.upper()
             elif key == 'Postcode':
-                json_for_excel['P_HomePostcode'] = value.upper()
+                print(f"Processing postcode: {value}")
+                # Only set postcode if it hasn't been set by handle_address
+                if 'P_HomePostcode' not in json_for_excel or not json_for_excel['P_HomePostcode']:
+                    json_for_excel['P_HomePostcode'] = value.upper()
+
             elif key == 'P_HomeTelephone':
                 json_for_excel['P_HomeTelephone'] = value
             elif key == 'P_EmailAddress':

@@ -2,3 +2,8 @@ pywebview
 striptrtf
 pandas
 openpyxl
+fastapi
+uvicorn
+pydantic
+requests
+python-multipart
