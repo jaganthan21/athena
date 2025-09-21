@@ -5,7 +5,7 @@ import psutil
 import time
 import traceback
 # from helper_functions import process_rtf_files_in_folder
-# from pdf_helper import process_files_in_folder as process_rtf_files_in_folder
+# from pdf_helper1 import process_files_in_folder as process_rtf_files_in_folder
 from extraction_engine1 import process_files_in_folder as process_rtf_files_in_folder
 
 

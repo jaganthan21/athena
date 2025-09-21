@@ -526,6 +526,7 @@ def transform_extracted_data(extracted_data):
             if not value or value.strip() == '':
                 print(f"Skipping empty value for key: {key}")
                 continue
+
             if key == 'Name':
                 json_for_excel.update(handle_name(value))
             elif key == 'DOB':
@@ -537,21 +538,26 @@ def transform_extracted_data(extracted_data):
             elif key == 'Address':
                 print(f"Processing address: {value}")
                 json_for_excel.update(handle_address(value))
-            # elif key == 'Postcode':
-            #     print(f"Processing postcode: {value}")
-            #     json_for_excel['P_HomePostcode'] = value.upper()
             elif key == 'Postcode':
                 print(f"Processing postcode: {value}")
-                # Only set postcode if it hasn't been set by handle_address
                 if 'P_HomePostcode' not in json_for_excel or not json_for_excel['P_HomePostcode']:
                     json_for_excel['P_HomePostcode'] = value.upper()
-
             elif key == 'P_HomeTelephone':
-                json_for_excel['P_HomeTelephone'] = value
-            elif key == 'P_EmailAddress':
-                json_for_excel['P_EmailAddress'] = clean_text(value)
+                # Only set home telephone if it is different from mobile
+                if value and value != json_for_excel.get('P_Mobile', ''):
+                    json_for_excel['P_HomeTelephone'] = value
             elif key == 'P_Mobile':
-                json_for_excel['P_Mobile'] = value
+                # Only set mobile if it is different from home telephone
+                if value and value != json_for_excel.get('P_HomeTelephone', ''):
+                    json_for_excel['P_Mobile'] = value
+            elif key == 'P_EmailAddress':
+                # Only accept valid email-like values
+                clean_val = clean_text(value)
+                if re.match(r"[^@]+@[^@]+\.[^@]+", clean_val):
+                    json_for_excel['P_EmailAddress'] = clean_val
+                else:
+                    # If invalid, set as empty (reference code behavior)
+                    json_for_excel['P_EmailAddress'] = ''
             elif key == 'R_StatType_Height_Value':
                 json_for_excel['R_StatType_Height_Value'] = value
             elif key == 'R_StatType_Height_Date':
@@ -567,10 +573,11 @@ def transform_extracted_data(extracted_data):
             elif key in ('Referral Agent details', 'Referrer Agent details'):
                 json_for_excel.update(handle_referral_agent(value))
             elif key in ('Reason_For_Referral', 'Relevant_Medical_Conditions', 'Related_Information'):
+                # ✅ Only these 3 should contribute to P_Information
                 generic_append(json_for_excel, key, value, p_information_parts)
             else:
-                # For any other generic field, just append value
-                generic_append(json_for_excel, key, value, p_information_parts)
+                # ✅ Keep generic values, but do NOT append them to p_information_parts
+                json_for_excel[key] = value
 
         # Combine into P_Information
         json_for_excel['P_Information'] = ', '.join(
@@ -593,6 +600,7 @@ def transform_extracted_data(extracted_data):
                 json_for_excel[name_field] = json_for_excel[name_field].capitalize().replace(',', '').replace('"', '')
 
         json_for_excel['R_ReasonForReferral'] = json_for_excel['P_Information']
+
         # Fill defaults
         for field, default_key in [
             ('RF_Role', "RF_Role"),
